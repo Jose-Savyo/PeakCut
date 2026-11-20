@@ -106,6 +106,13 @@ offers to download it. Set a creator's language on their Setup page so their liv
 It understands Modern Standard Arabic and everyday dialects, and the AI turns English words said in between
 back into English. Captions on the clips are in English.
 
+### Videos in Portuguese
+
+To clip videos spoken in Brazilian Portuguese, add the Portuguese speech model once in **Settings → Speech models**
+(about 487 MB, NVIDIA's Parakeet TDT 0.6b v3), or choose **Portuguese (Brazil)** under Options when adding a video.
+Captions, hooks, titles, descriptions and hashtags then stay in Portuguese: nothing is translated into English.
+A YouTube video whose own transcript is in Portuguese is treated the same way, whatever was chosen.
+
 ## Settings
 
 Everything is set through environment variables, normally in a `.env` file next to this README.

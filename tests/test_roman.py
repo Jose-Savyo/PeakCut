@@ -85,6 +85,22 @@ brain.ask_ai = by_purpose
 answers["now"] = ["Hello", "there", "friend."]
 check("English stays English", text(brain.english_captions(ws("hello there friend"), "en", "")) == "Hello there friend.")
 
+# ---- Portuguese: captions and everything the AI writes stay in Portuguese
+check("Portuguese is not translated", [brain.needs_translation(x) for x in ("pt", "pt-BR", "pt-br")] == [False, False, False])
+check("the AI is told to write in Brazilian Portuguese", "Brazilian Portuguese" in brain._rules(15, 60, "[0.0] oi", "pt")
+      and "in English" not in brain._rules(15, 60, "[0.0] oi", "pt-BR"))
+check("...and in English for every other language", "in English" in brain._rules(15, 60, "[0.0] hi", "en")
+      and "Brazilian" not in brain._rules(15, 60, "[0.0] hola", "es"))
+pt_seen = []
+def pt_fix(prompt, schema=None, purpose=""):
+    pt_seen.append(prompt)
+    return ["Não", "sei", "você."], "m", 5
+brain.ask_ai = pt_fix
+out = brain.english_captions(ws("nao sei voce"), "pt", "")
+check("Portuguese captions are tidied, never translated", text(out) == "Não sei você." and "Brazilian Portuguese" in pt_seen[-1], text(out))
+c = brain._tidy({"hook": "não acredito", "title": "Explicação", "highlight_words": ["coração"], "score": 70}, 1, 20)
+check("accents survive on the hook, title and highlighted words", (c["hook"], c["title"], c["highlight_words"]) == ("NÃO ACREDITO", "Explicação", ["coração"]), str(c))
+
 print("ALL PASSED" if not fails else f"{len(fails)} failed")
 import shutil; shutil.rmtree(os.environ["PEAKCUT_DATA"], ignore_errors=True)
 sys.exit(1 if fails else 0)

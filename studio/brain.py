@@ -62,9 +62,7 @@ Rules:
 - description: one or two sentences.
 - hashtags: 5 tags without the # sign.
 - highlight_words: 3 to 6 single words spoken in the clip that carry the punch.
-- Write hook, title, description, hashtags and highlight_words in English. If the video is in Hindi or Urdu,
-  you may write them the way people type Hindi and Urdu in Roman letters (Hinglish: "yaar ye kya hai"), never
-  in Devanagari or Urdu script. For any other language, write them in English.
+{write_rule}
 - category: one of funny, fail, clutch, rage, shock, take, story, other.
 - reason: one short sentence on why it works.
 {language}
@@ -84,10 +82,25 @@ ARABIC_NOTE = ("- The transcript is in Arabic letters. Speakers often mix in Eng
                "words they are.\n")
 
 
-def _rules(min_len, max_len, transcript: str) -> str:
-    """The rules and the transcript, with a note about English words in Arabic letters when the speech is in Arabic script."""
+WRITE_ENGLISH = ("""- Write hook, title, description, hashtags and highlight_words in English. If the video is in Hindi or Urdu,
+  you may write them the way people type Hindi and Urdu in Roman letters (Hinglish: "yaar ye kya hai"), never
+  in Devanagari or Urdu script. For any other language, write them in English.""")
+WRITE_PORTUGUESE = ("""- The video is spoken in Brazilian Portuguese. Write hook, title, description, hashtags and highlight_words in
+  Brazilian Portuguese, with correct accents, the way Brazilians write on social media. Never translate them into
+  English. highlight_words are copied exactly as they were said.""")
+
+
+def writes_portuguese(lang: str) -> bool:
+    """Is the video spoken in Portuguese? Then everything the AI writes for it, and its captions, stay in Portuguese."""
+    return (lang or "").lower().startswith("pt")
+
+
+def _rules(min_len, max_len, transcript: str, lang: str = "") -> str:
+    """The rules and the transcript, with a note about English words in Arabic letters when the speech is in Arabic script,
+    and the language the hook, title and post text are written in."""
     note = ARABIC_NOTE if len(ARABIC_SCRIPT.findall(transcript)) > 40 else ""
-    return RULES.format(min_len=min_len, max_len=max_len, transcript=transcript, language=note)
+    write = WRITE_PORTUGUESE if writes_portuguese(lang) else WRITE_ENGLISH
+    return RULES.format(min_len=min_len, max_len=max_len, transcript=transcript, language=note, write_rule=write)
 
 
 CATEGORIES = {"funny", "fail", "clutch", "rage", "shock", "take", "story", "other"}
@@ -278,8 +291,9 @@ def _snap(clip, lines, words, min_len, max_len, duration):
     return round(max(0.0, s - 0.15), 2), round(min(duration, e + tail), 2)
 
 
-def fallback_by_loudness(db, words, n, max_len, duration):
+def fallback_by_loudness(db, words, n, max_len, duration, lang=""):
     """No AI available: take the loudest stretches that contain speech."""
+    pt = writes_portuguese(lang)
     z = loud_zscore(db)
     picks, order = [], np.argsort(-z)
     for sec in order:
@@ -289,8 +303,8 @@ def fallback_by_loudness(db, words, n, max_len, duration):
             continue
         if not any(s <= w["s"] <= e for w in words):
             continue
-        picks.append({"start": s, "end": e, "score": 50, "category": "other", "hook": "WAIT FOR IT",
-                      "title": "Loud moment", "description": "", "hashtags": [], "highlight_words": [],
+        picks.append({"start": s, "end": e, "score": 50, "category": "other", "hook": "ESPERA SÓ" if pt else "WAIT FOR IT",
+                      "title": "Momento alto" if pt else "Loud moment", "description": "", "hashtags": [], "highlight_words": [],
                       "reason": "Picked by loudness because the AI was unavailable."})
         if len(picks) >= n:
             break
@@ -306,7 +320,8 @@ def _game_rules(game):
     return GAME_RULES.format(game=_safe(games.name_of(game) or str(game), 40), tags=tags)
 
 
-def find_clips(words, db, duration, title="", uploader="", max_clips=6, min_len=15, max_len=60, log=print, game=None):
+def find_clips(words, db, duration, title="", uploader="", max_clips=6, min_len=15, max_len=60, log=print, game=None,
+               lang=""):
     z = loud_zscore(db)
     lines = make_lines(words, z)
     if not lines:
@@ -325,7 +340,7 @@ def find_clips(words, db, duration, title="", uploader="", max_clips=6, min_len=
             continue
         prompt = (HEAD.format(title=_safe(title) or "unknown", uploader=_safe(uploader) or "unknown", n=per_window)
                   + extra
-                  + _rules(min_len, max_len, _fmt(chunk)))
+                  + _rules(min_len, max_len, _fmt(chunk), lang))
         try:
             out, used_model, spent = ask_ai(prompt, purpose="Video: finding clips")
             tokens += spent
@@ -334,7 +349,7 @@ def find_clips(words, db, duration, title="", uploader="", max_clips=6, min_len=
             log(f"AI window {a:.0f}-{b:.0f}s failed: {e}")
     note = ""
     if not used_model:
-        found = fallback_by_loudness(db, words, max_clips, max_len, duration)
+        found = fallback_by_loudness(db, words, max_clips, max_len, duration, lang)
         note = "The AI was unavailable, so clips were picked by loudness only."
     clips = []
     for c in sorted(found, key=lambda c: -_num(c.get("score"))):
@@ -350,7 +365,8 @@ def find_clips(words, db, duration, title="", uploader="", max_clips=6, min_len=
     return clips, {"model": used_model, "tokens": tokens, "note": note}
 
 
-def find_live_clips(words, z, now, chat=None, title="", uploader="", min_len=15, max_len=60, existing=(), game=None):
+def find_live_clips(words, z, now, chat=None, title="", uploader="", min_len=15, max_len=60, existing=(), game=None,
+                    lang=""):
     """One live check over the recent transcript. Returns (clips, tokens_used)."""
     lines = make_lines(words, z, chat)
     if len(lines) < 3:
@@ -358,7 +374,7 @@ def find_live_clips(words, z, now, chat=None, title="", uploader="", min_len=15,
     prompt = (HEAD.format(title=_safe(title) or "unknown", uploader=_safe(uploader) or "unknown", n=2)
               + _game_rules(game)
               + LIVE_NOTE.format(now=now)
-              + _rules(min_len, max_len, _fmt(lines)))
+              + _rules(min_len, max_len, _fmt(lines), lang))
     out, _model, spent = ask_ai(prompt, purpose="Live check")
     clips = []
     for c in sorted((c for c in out if isinstance(c, dict)), key=lambda c: -_num(c.get("score"))):
@@ -376,20 +392,20 @@ def _first(out):
     return next((c for c in (out if isinstance(out, list) else []) if isinstance(c, dict)), None)
 
 
-def _one_prompt(intro, text, title, uploader, game=None):
+def _one_prompt(intro, text, title, uploader, game=None, lang=""):
     return (f"{intro}\nVideo title: {_safe(title) or 'unknown'}\nChannel: {_safe(uploader) or 'unknown'}\n\n"
             "Return exactly one item describing it. Set start and end to 0."
             + _game_rules(game)
-            + _rules(0, 0, _safe(text, 8000)))
+            + _rules(0, 0, _safe(text, 8000), lang))
 
 
-def describe(text, title="", uploader="", game=None, timeout=None):
+def describe(text, title="", uploader="", game=None, timeout=None, lang=""):
     """Hook, title and post text for a clip the user cut by hand."""
     blank = {"score": 0, "category": "other", "hook": "", "title": "", "description": "", "hashtags": [],
              "highlight_words": [], "reason": "Clipped by hand."}
     if len(text.split()) < 4:
         return blank
-    prompt = _one_prompt("A streamer's viewer clipped this moment by hand.", text, title, uploader, game)
+    prompt = _one_prompt("A streamer's viewer clipped this moment by hand.", text, title, uploader, game, lang)
     try:
         out, _m, _u = ask_ai(prompt, purpose="Hand clip: title and hook", timeout=timeout)
         if not _first(out):
@@ -406,14 +422,14 @@ def describe(text, title="", uploader="", game=None, timeout=None):
         return blank
 
 
-def post_text(text, title="", uploader="", game=None):
+def post_text(text, title="", uploader="", game=None, lang=""):
     """A fresh title, description and hashtags for a clip that is already made, from what is said in it.
     Nothing is saved here: the person reads it and decides. Says plainly why when it can't.
     On a game stream the AI reads the same game rules as when the clip was found."""
     if len(text.split()) < 4:
         raise ValueError("Too few words are spoken in this clip for the AI to write about it. Write the post text yourself.")
     out, _m, _u = ask_ai(_one_prompt("Write the post text for this short clip. The person posting it will read it first.",
-                                     text, title, uploader, game), purpose="Clip: post text")
+                                     text, title, uploader, game, lang), purpose="Clip: post text")
     c = _first(out)
     c = _tidy(c, 0, 0, game) if c else None
     if not c or not (c["title"] or c["description"]):
@@ -494,7 +510,7 @@ SIG_SCHEMA = {
 
 
 def judge_transcript(words, start, now, title="", uploader="", min_len=15, max_len=60, existing=(), n=2, must=False,
-                    game=None, timeout=None):
+                    game=None, timeout=None, lang=""):
     """Judge 1: words only. Returns (clips, tokens)."""
     lines = make_lines(words)
     if len(lines) < 3:
@@ -502,7 +518,7 @@ def judge_transcript(words, start, now, title="", uploader="", min_len=15, max_l
     prompt = (TRANSCRIPT_JUDGE.format(title=_safe(title) or "unknown", uploader=_safe(uploader) or "unknown", start=start, now=now,
                                       n=n, must=MUST_PICK if must else NOT_MUST)
               + _game_rules(game)
-              + _rules(min_len, max_len, _fmt(lines)))
+              + _rules(min_len, max_len, _fmt(lines), lang))
     out, _model, spent = ask_ai(prompt, purpose="Live: words judge", timeout=timeout)
     clips = []
     for c in sorted((c for c in out if isinstance(c, dict)), key=lambda c: -_num(c.get("score"))):
@@ -540,8 +556,9 @@ def judge_signals(z, chat, start, now, unit="messages", timeout=None):
 
 
 FIX_SCHEMA = {"type": "ARRAY", "items": {"type": "STRING"}}
-# Languages whose captions keep the words that were said: English as it is, Hindi and Urdu in Roman letters.
-KEEP_LANGS = ("en", "hi", "ur")
+# Languages whose captions keep the words that were said: English and Portuguese as they are, Hindi and Urdu in
+# Roman letters.
+KEEP_LANGS = ("en", "pt", "hi", "ur")
 
 
 def needs_translation(lang: str) -> bool:
@@ -626,6 +643,10 @@ def _fix_caption_words(words: list, title: str = "", lang: str = "") -> list:
                 "in Roman letters), write that same word in Roman letters the way people type Hindi in chats (Hinglish): "
                 "'चूना' -> 'choona', 'जो' -> 'jo', 'उसको' -> 'usko', 'یار' -> 'yaar', 'کیا' -> 'kya'. Never translate it into "
                 "English and never leave Devanagari or Urdu script. ") if hindi else ""
+    if writes_portuguese(lang):
+        hinglish += ("The words are Brazilian Portuguese: keep every word in Portuguese, with its correct accents "
+                     "('nao' -> 'não', 'voce' -> 'você'), and write numbers in Portuguese as digits ('onze' -> '11'). "
+                     "Never translate into English. ")
     numbered = "\n".join(f"{i}: {_safe(w['w'], 60)}" for i, w in enumerate(words))
     prompt = (
         "These are the words of a short video clip's captions, one per line with its number, written by a speech "

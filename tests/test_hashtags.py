@@ -54,6 +54,12 @@ check("with no description at all, the tags are the description", empty["descrip
 check("a clip made before this keeps posting as it did", posting._caption({"description": "D", "hashtags": ["a", "b"]}, {"post_footer": "F"}) == "D" + NL * 2 + "#a #b" + NL * 2 + "F")
 
 print("ALL PASSED" if not fails else f"{len(fails)} failed")
+# Portuguese: accented words are kept whole, and everyday words are not tags
+pt = h.make("A explicação do jogo foi incrível. Que explicação boa, você viu a explicação?", "Flow Games: GTA 6", "Flow Games", None, "story")
+check("an accented word is kept whole", "explicacao" in pt, str(pt))
+check("everyday Portuguese words are not tags", not set(pt) & {"voce", "que", "foi", "viu"}, str(pt))
+check("a Portuguese channel is a tag", "flowgames" in pt, str(pt))
+
 import shutil  # noqa: E402
 
 db.engine.dispose()

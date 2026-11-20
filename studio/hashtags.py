@@ -11,6 +11,7 @@ Three to five tags, picked from what is really there:
 A description the person wrote themselves is never touched: see apply().
 """
 import re
+import unicodedata
 
 from . import games
 
@@ -29,6 +30,10 @@ hai kya yaar nahi nahin bhai toh aur mein tha kar karo kiya ho hain bhi koi abhi
 woh wo ye yeh hum tum aap kuch sab bohot bahut matlab accha acha theek lekin par kyun kaise
 actual actually literally basically honestly probably definitely obviously seriously totally bro dude man chat stream video
 fuck fucking fucked shit damn bitch bitches ass dick pussy sex nigga nigger niggas porn rape
+aqui assim ate cara coisa coisas como com das dos ela ele elas eles entao essa esse esta estava este estou isso isto
+mais mas mesmo muito muita nao nada nem nos nossa nosso para pela pelo porque pois quando quem que sao sem sempre seu
+sua tambem tava tem tenho ter tipo todo toda todos tudo uma umas uns voce voces vai vou foi fui gente sobre cada onde
+agora depois antes ainda bem bom boa ali num numa pra pro estao fazer faz fala falar falou disse acho sabe olha porra
 """.split())
 
 CATEGORY_TAGS = {"funny": "funny", "fail": "fails", "clutch": "clutch", "rage": "rage", "shock": "shocking",
@@ -40,29 +45,35 @@ _NUMBERED = re.compile(r"\b([A-Za-z]{2,12})\s+(\d{1,2})\b")
 _TAG_IN_TEXT = re.compile(r"(?:^|\s)#\w+")
 
 
+def _fold(s) -> str:
+    """Accents taken off the letters ("explicação" -> "explicacao"), so a word in Portuguese or another Latin
+    language is kept whole instead of losing its accented letters."""
+    return "".join(c for c in unicodedata.normalize("NFKD", str(s or "")) if not unicodedata.combining(c))
+
+
 def _tag(s) -> str:
     """One tag: letters and digits only, lower case, not too short or long, never just a number or a stop word."""
-    t = re.sub(r"[^A-Za-z0-9]", "", str(s or "")).lower()[:30]
+    t = re.sub(r"[^A-Za-z0-9]", "", _fold(s)).lower()[:30]
     return "" if len(t) < 3 or t.isdigit() or t in STOP else t
 
 
 def channel_tag(uploader) -> str:
     """The channel as one tag: "Kai Cenat Live" becomes kaicenat."""
-    words = [w for w in re.findall(r"[A-Za-z0-9]+", str(uploader or "")) if w.lower() not in CHANNEL_NOISE]
+    words = [w for w in re.findall(r"[A-Za-z0-9]+", _fold(uploader)) if w.lower() not in CHANNEL_NOISE]
     t = _tag("".join(words))
     return t if 3 <= len(t) <= 25 else ""
 
 
 def numbered(title) -> list:
     """Names with a number in the title ("GTA 6", "Fortnite 2") as one tag each."""
-    return [_tag(a + b) for a, b in _NUMBERED.findall(str(title or "")) if a.lower() not in STOP]
+    return [_tag(a + b) for a, b in _NUMBERED.findall(_fold(title)) if a.lower() not in STOP]
 
 
 def keywords(text, title="", count=2) -> list:
     """The words that matter most in what was said: said more than once, or a name (capitalised in the middle
     of a sentence), and more so if the title has them too."""
-    raw = str(text or "").split()
-    in_title = {w.lower() for w in _WORD.findall(str(title or ""))}
+    raw = _fold(text).split()
+    in_title = {w.lower() for w in _WORD.findall(_fold(title))}
     score = {}
     for i, r in enumerate(raw):
         m = _WORD.search(r)

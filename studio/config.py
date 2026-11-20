@@ -140,6 +140,9 @@ ASR_MODEL_AR_URL = env("PEAKCUT_ASR_MODEL_AR_URL") or (
     f"3ae1fba562d68ce5299ea32659e5973cf464e034/{ASR_MODEL_AR}.tar.bz2")
 ASR_MODEL_AR_SHA256 = (env("PEAKCUT_ASR_MODEL_AR_SHA256")
                        or "033ac7d886b3a4f04f66f3b8959456d7f4aa28ad4dae9da96a9cc716448efff9").strip().lower()
+# Portuguese (Brazil): NVIDIA's Parakeet TDT 0.6b v3, one model that hears 25 European languages, Portuguese among
+# them. Published for sherpa-onnx by its authors, next to the English model. Downloaded only when asked for.
+ASR_MODEL_PT = env("PEAKCUT_ASR_MODEL_PT", "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8")
 DATABASE_URL = env("DATABASE_URL") or f"sqlite:///{(DATA_DIR / 'peakcut.db').as_posix()}"
 # Commercials and "be right back" screens are stitched into streams. A clip taken from one is worthless, so those
 # seconds can be found and left out. It is off by default: it reads the whole video once, which is not free, and
