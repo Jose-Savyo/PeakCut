@@ -119,5 +119,20 @@ try:
 finally:
     shutil.rmtree(work, ignore_errors=True)      # the pictures are big; they must not be left behind
 
+# ---- a long video comes piece by piece: the webcam is looked for in the first piece, once
+from studio import jobs  # noqa: E402
+looked = []
+real_detect = jobs._facecam
+jobs._facecam = lambda job, path=None: looked.append(path) or [10, 20, 300, 160]
+job = {"source_path": None}
+check("the webcam is found in a piece", jobs._piece_facecam(job, "piece1.mp4"), [10, 20, 300, 160])
+check("...and kept for the next pieces, without looking again", (jobs._piece_facecam(job, "piece2.mp4"), looked),
+      ([10, 20, 300, 160], ["piece1.mp4"]))
+jobs._facecam = lambda job, path=None: looked.append(path) or None
+job, looked[:] = {"source_path": None}, []
+jobs._piece_facecam(job, "a.mp4"), jobs._piece_facecam(job, "b.mp4")
+check("a stream with no webcam is looked at only once", looked, ["a.mp4"])
+jobs._facecam = real_detect
+
 print("ALL PASSED" if not fails else f"{len(fails)} FAILED")
 sys.exit(1 if fails else 0)

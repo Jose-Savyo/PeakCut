@@ -462,6 +462,12 @@ def render_one(job, clip, words):
         src = Path(clip["src"]) if clip.get("src") else Path(job["source_path"])
         if not clip.get("src"):
             clip["end"] = min(clip["end"], job["duration"])
+        if clip.get("layout") == "gameplay" and not clip.get("facecam") and clip.get("src"):
+            # A long video is never downloaded whole, only the piece of each clip: the webcam is looked for in
+            # the piece instead, once for the whole video (it does not move during a stream).
+            face = _piece_facecam(job, src)
+            if face:
+                clip["facecam"] = face
         local = dict(clip, start=clip["start"] - off, end=clip["end"] - off, hook=roman.to_roman(clip.get("hook") or ""))
         near = _caption_words(job, clip, words, off) if clip.get("captions", True) else []
         out = render.render_clip(src, d / "clips", clip["id"], local, near, job["width"], job["height"])
@@ -604,14 +610,14 @@ def _covers(words: list, start: float, end: float) -> bool:
     return len(inside) >= 25 * minutes and inside[-1]["s"] >= start + 0.85 * (end - start)
 
 
-def _facecam(job) -> list | None:
+def _facecam(job, path=None) -> list | None:
     """Where the webcam is in the source: once for the whole video, for every clip of it.
 
     Only a sure answer is used. A box that is a scoreboard drawn over the game would
     put a picture of a scoreboard in the corner of the clip. One frame is also shown to
     the AI, which tells a person from a game character better than any measurement can;
     what it says is measured again on the picture, so it cannot do any harm."""
-    path = job.get("source_path")
+    path = path or job.get("source_path")
     if not path or not Path(path).is_file():
         return None
     try:
@@ -622,6 +628,24 @@ def _facecam(job) -> list | None:
         return None
     job["facecam"] = [box["x"], box["y"], box["w"], box["h"]]
     return job["facecam"]
+
+
+_face_lock = threading.Lock()
+
+
+def _piece_facecam(job, piece) -> list | None:
+    """The webcam of a video that is fetched piece by piece, looked for in the first piece that is made, and
+    then kept for the rest. Pieces are made on several threads at once, so only one of them looks."""
+    with _face_lock:
+        if job.get("facecam"):
+            return job["facecam"]
+        if job.get("facecam_looked"):
+            return None
+        job["facecam_looked"] = True
+        face = _facecam(job, str(piece))
+        if face:
+            job["facecam"] = face
+        return face
 
 
 def _run_job(job):
