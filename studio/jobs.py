@@ -12,6 +12,8 @@ import traceback
 import uuid
 from pathlib import Path
 
+import numpy as np
+
 from . import brain, config, creators, ctx, facecam, fetch_model, games, hashtags, load, media, quality, render, roman, safe, transcribe, usage
 
 class _FairQueue:
@@ -632,8 +634,50 @@ def _facecam(job, path=None) -> list | None:
         return None
     if not box or box.get("conf") != "high":
         return None
-    job["facecam"] = [box["x"], box["y"], box["w"], box["h"]]
+    try:
+        frame = facecam._full_frame(path)
+    except Exception:  # noqa: BLE001
+        frame = None
+    job["facecam"] = webcam_shape([box["x"], box["y"], box["w"], box["h"]], job.get("width") or 0, job.get("height") or 0, frame)
     return job["facecam"]
+
+
+WEBCAM_ASPECT = 16 / 9      # nearly every webcam picture on a stream
+FLAT_ASPECT = 1.95          # a box flatter than this has lost a strip of the picture
+
+
+def webcam_shape(box, src_w=0, src_h=0, frame=None) -> list:
+    """A webcam box that came out too flat is made right again.
+
+    A strong straight line inside the picture (a shelf behind the streamer) can be taken for the webcam's top or
+    bottom border, which cuts the top of the head off. The real border is then looked for in the picture, just
+    above and just below the box, where a 16:9 picture would end; the stronger of the two is used. With no picture
+    to measure, the box is made 16:9 towards the side that is not on the frame's edge."""
+    x, y, w, h = (int(v) for v in box)
+    if h <= 0 or w / h <= FLAT_ASPECT:
+        return [x, y, w, h]
+    want = int(round(w / WEBCAM_ASPECT))
+    grow = want - h
+    if frame is not None and getattr(frame, "ndim", 0) == 2 and frame.shape[1] >= x + w:
+        rows = np.abs(np.diff(frame[:, x:x + w].astype(np.float32), axis=0)).sum(axis=1)   # rows[i]: edge below row i
+        n, reach = len(rows), grow + max(8, grow // 2)
+        above = [(rows[i], i + 1) for i in range(max(0, y - reach), max(0, y - 2))]
+        below = [(rows[i], i + 1) for i in range(min(n, y + h + 2), min(n, y + h + reach))]
+        best = max(above + below, default=None)
+        if best is not None and best[0] > 1.5 * float(np.median(rows)):
+            edge = best[1]
+            ny, nh = (edge, y + h - edge) if edge <= y else (y, edge - y)
+            if nh > 0 and 1.2 <= w / nh <= FLAT_ASPECT:
+                return [x, ny, w, nh]
+    limit = src_h or (y + h + grow)
+    if y <= 2:                         # sits on the top edge: the missing strip is at the bottom
+        h = min(want, limit - y)
+    elif y + h >= limit - 2:           # sits on the bottom edge: the missing strip is at the top
+        y, h = max(0, y - grow), min(want, y + h)
+    else:                              # in between: half above, half below
+        y = max(0, y - grow // 2)
+        h = min(want, limit - y)
+    return [x, y, w, h]
 
 
 _face_lock = threading.Lock()

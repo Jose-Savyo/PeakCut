@@ -129,6 +129,18 @@ check("...the game in the middle is left as it is", f.count("boxblur") == 1, Tru
 check("...the game sits right under the webcam", "overlay=0:656" in f, True)
 check("the layout asks for the webcam to be found", "camtop" in render.WEBCAM_LAYOUTS, True)
 
+# ---- a webcam box that came out too flat (a shelf line taken for its top border)
+import numpy as np  # noqa: E402
+from studio import jobs as _jobs  # noqa: E402
+check("a normal 16:9 box is left alone", _jobs.webcam_shape([0, 0, 436, 245], 1920, 1080), [0, 0, 436, 245])
+pic = np.full((1080, 1920), 40.0, dtype=np.float32)
+pic[24:256, 0:440] = 160.0            # the webcam picture: its real borders at rows 24 and 256
+pic[52, 0:440] = 250.0                # a shelf inside it, a strong line
+check("...a flat box gets its real top border back from the picture", _jobs.webcam_shape([0, 53, 440, 203], 1920, 1080, pic),
+      [0, 24, 440, 232])
+check("...and with no picture it is made 16:9 away from the frame's edge", _jobs.webcam_shape([0, 0, 437, 175], 1920, 1080),
+      [0, 0, 437, 246])
+
 # ---- a long video comes piece by piece: the webcam is looked for in the first piece, once
 from studio import jobs  # noqa: E402
 looked = []
