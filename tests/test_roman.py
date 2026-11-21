@@ -98,6 +98,24 @@ def pt_fix(prompt, schema=None, purpose=""):
 brain.ask_ai = pt_fix
 out = brain.english_captions(ws("nao sei voce"), "pt", "")
 check("Portuguese captions are tidied, never translated", text(out) == "Não sei você." and "Brazilian Portuguese" in pt_seen[-1], text(out))
+# a game character talking English in a Portuguese video: that line is translated, the streamer's words are not
+mixed = [{"w": w, "s": t, "e": t + 0.4} for w, t in (("tem", 0.0), ("criança", 0.5), ("no", 1.0), ("jogo.", 1.5),
+         ("custody", 4.0), ("of", 4.5), ("your", 5.0), ("son", 5.5), ("is", 6.0), ("a", 6.5), ("different", 7.0), ("matter.", 7.5))]
+check("an English line in a Portuguese video is found", brain.foreign_lines(brain.make_lines(mixed)) == [1])
+asked = []
+def pt_mix(prompt, schema=None, purpose=""):
+    asked.append(purpose)
+    if purpose == "Caption translation":
+        return ["A guarda do seu filho é outra história."], "m", 5
+    return ["Tem", "criança", "no", "jogo."], "m", 5
+brain.ask_ai = pt_mix
+out = brain.english_captions(mixed, "pt-BR", "")
+check("...it is translated into Portuguese, on the time it was said", text(out) == "Tem criança no jogo. A guarda do seu filho é outra história."
+      and out[4]["s"] >= 4.0 and out[-1]["e"] <= 7.95, text(out))
+check("...and the Portuguese words keep their own moments", [w["s"] for w in out[:4]] == [0.0, 0.5, 1.0, 1.5], str(out[:4]))
+asked.clear()
+brain.english_captions(mixed[:4], "pt", "")
+check("a clip all in Portuguese is not sent for translation", asked == ["Caption wording fix"], str(asked))
 c = brain._tidy({"hook": "não acredito", "title": "Explicação", "highlight_words": ["coração"], "score": 70}, 1, 20)
 check("accents survive on the hook, title and highlighted words", (c["hook"], c["title"], c["highlight_words"]) == ("NÃO ACREDITO", "Explicação", ["coração"]), str(c))
 

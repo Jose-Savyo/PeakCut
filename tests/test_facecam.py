@@ -125,7 +125,7 @@ check("webcam on top keeps the whole game (16:9 band in the middle)", (lay, fg),
 check("...heading and captions sit below the game", hy > 656 + 608 and hy < cy <= 1640, True)
 f = render._filter("camtop", 608, [0, 0, 291, 169])
 check("...the webcam is cropped (its border trimmed) and made big on top", "crop=" in f and "scale=1080:656" in f, True)
-check("...the small webcam inside the game is blurred", "boxblur=12:2" in f, True)
+check("...the game in the middle is left as it is", f.count("boxblur") == 1, True)
 check("...the game sits right under the webcam", "overlay=0:656" in f, True)
 check("the layout asks for the webcam to be found", "camtop" in render.WEBCAM_LAYOUTS, True)
 

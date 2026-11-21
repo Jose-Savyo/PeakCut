@@ -263,11 +263,10 @@ def _filter(layout, fg_h, facecam=None):
             ix, iy = max(1, fw * 7 // 100), max(1, fh * 7 // 100)
             cx, cy, cw, ch = fx + ix, fy + iy, max(2, fw - 2 * ix), max(2, fh - 2 * iy)
             band = (H - fg_h) // 2
-            return (f"[0:v]fps={config.OUT_FPS},split=4[w][g][s][b];"
+            return (f"[0:v]fps={config.OUT_FPS},split=3[w][g][b];"
                     f"[w]crop={cw}:{ch}:{cx}:{cy},scale={W}:{band}:force_original_aspect_ratio=increase,"
                     f"crop={W}:{band},setsar=1[cam];"
-                    # the small webcam inside the game is blurred: the face is already big above it
-                    f"[s]crop={fw}:{fh}:{fx}:{fy},boxblur=12:2[sb];[g][sb]overlay={fx}:{fy},scale={W}:{fg_h}[game];"
+                    f"[g]scale={W}:{fg_h}[game];"
                     f"[b]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,boxblur=6:2,"
                     f"scale={W}:{H},eq=brightness=-0.14:saturation=1.15[bg];"
                     f"[bg][cam]overlay=0:0[x];[x][game]overlay=0:{band},setsar=1[v0];")
