@@ -736,8 +736,11 @@ def link_preview(request: Request, url: str = ""):
         raise HTTPException(429, "Too many links at once. Wait a moment.")
     try:
         return _lookup(media.preview, url)
-    except media.YouTubeBlocked as e:
-        raise HTTPException(503, str(e))
+    except media.YouTubeBlocked:
+        # YouTube is refusing downloads for a while. The link is still taken: the video waits in line and starts
+        # by itself when YouTube allows downloads again.
+        return {"title": "YouTube video (waits until YouTube allows downloads again)", "uploader": "", "duration": 0,
+                "is_live": False, "thumb": "", "waiting": True}
     except ValueError as e:
         raise HTTPException(422, str(e))
     except HTTPException:
@@ -754,10 +757,6 @@ def create_from_link(body: dict = Body(...)):
     url = str(body.get("url", "")).strip()[:500]
     if not media.site_allowed(url):
         raise HTTPException(400, "Paste a full link to a YouTube, Twitch or Kick video.")
-    try:
-        media.check_youtube(url)          # YouTube is refusing us right now: say so, rather than queue a job that fails
-    except media.YouTubeBlocked as e:
-        raise HTTPException(503, str(e))
     creator = str(body.get("creator") or "") or None
     if creator and not creators.get(creator):
         raise HTTPException(404, "No such creator")

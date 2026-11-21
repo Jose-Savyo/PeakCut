@@ -602,6 +602,9 @@ def _fetch_piece(job, clip, full_audio):
         clip["start"], clip["end"] = max(clip["start"], clip["src_offset"]), min(clip["end"], clip["src_end"])
         job.setdefault("width", meta["width"])
         job.setdefault("height", meta["height"])
+    except media.YouTubeBlocked:
+        clip["status"] = "queued"          # the whole video waits for YouTube, and this clip is made after
+        raise
     except Exception as e:  # noqa: BLE001
         clip.update(status="error", error=f"Could not fetch this part of the video: {safe.friendly(e, 250)}")
 
@@ -1007,6 +1010,8 @@ def _worker(quick_only=False):
                     words = json.loads((Path(job["dir"]) / "words.json").read_text(encoding="utf-8"))
                 render_one(job, clip, words)
         except Exception as e:  # noqa: BLE001
+            if kind == "job" and isinstance(e, media.YouTubeBlocked) and _wait_for_youtube(job):
+                continue                  # it waits in line and starts again by itself (the finally below still runs)
             (Path(job["dir"]) / "error.log").write_text(traceback.format_exc(), encoding="utf-8")
             if kind == "job":
                 for c in job["clips"]:
@@ -1018,6 +1023,30 @@ def _worker(quick_only=False):
             ctx._uid.reset(token)
             if kind == "job":
                 _q.done()
+
+
+YT_MAX_WAITS = 18      # about three hours of YouTube refusing before a video is given up
+
+
+def _wait_for_youtube(job) -> bool:
+    """YouTube is refusing downloads for a while ("confirm you're not a bot"). Instead of failing, the video waits
+    and is put back in line by itself when the pause is over, carrying on from what was already done (transcript,
+    clips found, clips made). False after YT_MAX_WAITS tries: then it fails as before, with the reason."""
+    waits = int(job.get("yt_waits") or 0) + 1
+    if waits > YT_MAX_WAITS:
+        return False
+    delay = max(30.0, media.yt_pause_left()) + 5
+    at = time.strftime("%H:%M", time.localtime(time.time() + delay))
+    for c in job.get("clips", []):
+        if c.get("status") == "rendering":
+            c["status"] = "queued"        # made again when the video carries on
+    _set(job, status="queued", error=None, yt_waits=waits, resume=(Path(job["dir"]) / "words.json").is_file(),
+         stage=f"Waiting for YouTube to allow downloads again. Tries again by itself at {at}")
+    creators.log(job["creator"], f"YouTube is refusing downloads for now; the video waits and tries again at {at}")
+    timer = threading.Timer(delay, lambda: _q.put(("job", job["id"], None), user=job["user"]))
+    timer.daemon = True
+    timer.start()
+    return True
 
 
 def _pick_up_after_restart():

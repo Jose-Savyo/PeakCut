@@ -1,8 +1,10 @@
 """Getting video in: link download, probing, audio extraction, loudness."""
 import contextlib
+import copy
 import json
 import re
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -37,6 +39,11 @@ def is_youtube(url: str) -> bool:
 
 def youtube_paused() -> bool:
     return time.time() < _yt_refused_until
+
+
+def yt_pause_left() -> float:
+    """Seconds until YouTube links are tried again (0 when they are not paused)."""
+    return max(0.0, _yt_refused_until - time.time())
 
 
 def check_youtube(url: str):
@@ -106,6 +113,7 @@ def _ydl(opts):
     # a channel or playlist link is answered as "a list" straight away, never walked video by video
     return yt_dlp.YoutubeDL({"noplaylist": True, "quiet": True, "no_warnings": True, "logger": _Quiet(),
                              "extract_flat": "in_playlist", "playlistend": 1, "socket_timeout": 20,
+                             "sleep_interval_requests": REQUEST_GAP,
                              "concurrent_fragment_downloads": 4, **cookie_opts(), **opts})
 
 
@@ -121,10 +129,57 @@ def _biggest(job_dir: Path, stem: str) -> Path:
     return files[0]
 
 
+# ---------------------------------------------------------------- asking the site once per video
+# Each time yt-dlp opens a video it asks the site for the whole video page, which takes a few seconds, and a site
+# that is asked many times in a row starts refusing ("confirm you're not a bot"). A video used to be opened again
+# for the preview, the title, the transcript, the audio and every clip's piece: about 14 times for 10 clips. Now it
+# is opened once and what the site answered is used for all of them. The download addresses in that answer expire
+# after some hours, so it is kept for an hour, and dropped at once if a download from it fails.
+INFO_TTL = 3600
+REQUEST_GAP = 0.75          # seconds between the requests of one opening: a light, steady client
+_INFO: dict = {}            # url -> (when, what the site answered, not yet worked through)
+_info_lock = threading.Lock()
+
+
+def _raw_info(url: str) -> dict:
+    """What the site says about a video, asked once and kept for an hour. Openings of the same video wait for each
+    other, so pieces fetched at the same moment do not each ask again."""
+    with _info_lock:
+        hit = _INFO.get(url)
+        if hit and time.time() - hit[0] < INFO_TTL:
+            return hit[1]
+        with _youtube_guard(url), _ydl({}) as ydl:
+            raw = ydl.extract_info(url, download=False, process=False)
+            if raw.get("_type") in ("url", "url_transparent"):
+                raw = ydl.extract_info(url, download=False)      # a link that points elsewhere: follow it fully
+        _INFO[url] = (time.time(), raw)
+        if len(_INFO) > 50:
+            _INFO.pop(min(_INFO, key=lambda k: _INFO[k][0]))
+        return raw
+
+
+def forget_info(url: str):
+    """Ask the site afresh next time (a download from the kept answer failed: its addresses may have expired)."""
+    with _info_lock:
+        _INFO.pop(url, None)
+
+
+def _fetch(url: str, opts: dict):
+    """Download with the kept answer instead of opening the video again."""
+    raw = _raw_info(url)
+    try:
+        with _youtube_guard(url), _ydl(opts) as ydl:
+            ydl.process_ie_result(copy.deepcopy(raw), download=True)
+    except YouTubeBlocked:
+        raise
+    except Exception:
+        forget_info(url)
+        raise
+
+
 def info(url: str) -> dict:
     """Title, channel and length, without downloading anything."""
-    with _youtube_guard(url), _ydl({}) as ydl:
-        i = ydl.extract_info(url, download=False)
+    i = _raw_info(url)
     return {"title": i.get("title") or "", "uploader": i.get("uploader") or i.get("channel") or "",
             "duration": float(i.get("duration") or 0), "is_live": bool(i.get("is_live")),
             "thumbnail": i.get("thumbnail") or "", "kind": i.get("_type") or "video"}
@@ -136,8 +191,8 @@ def youtube_words(url: str):
     if not is_youtube(url):
         return None
     import json
+    i = _raw_info(url)
     with _youtube_guard(url), _ydl({}) as ydl:
-        i = ydl.extract_info(url, download=False)
         auto = i.get("automatic_captions") or {}
         lang = str(i.get("language") or "").strip().lower()
         base = lang.split("-")[0] if lang else ""
@@ -158,8 +213,8 @@ def youtube_english_words(url: str):
     if not is_youtube(url):
         return None
     import json
+    i = _raw_info(url)
     with _youtube_guard(url), _ydl({}) as ydl:
-        i = ydl.extract_info(url, download=False)
         tracks = []
         for group in (i.get("subtitles") or {}, i.get("automatic_captions") or {}):
             for k in ("en", "en-US", "en-GB"):
@@ -258,17 +313,15 @@ def download_audio(url: str, job_dir: Path, on_progress=None) -> Path:
         if on_progress and d.get("status") == "downloading" and total:
             on_progress(d.get("downloaded_bytes", 0) / total)
 
-    with _youtube_guard(url), _ydl({"format": "ba[ext=m4a]/ba/worst", "outtmpl": str(job_dir / "audio_src.%(ext)s"),
-               "progress_hooks": [hook]}) as ydl:
-        ydl.download([url])
+    _fetch(url, {"format": "ba[ext=m4a]/ba/worst", "outtmpl": str(job_dir / "audio_src.%(ext)s"),
+                 "progress_hooks": [hook]})
     return _biggest(job_dir, "audio_src")
 
 
 def download(url: str, job_dir: Path, height=720) -> Path:
     """The whole video. Used for shorter videos, where this is quicker than fetching pieces."""
-    with _youtube_guard(url), _ydl({"format": _video_format(height), "merge_output_format": "mp4",
-                                    "outtmpl": str(job_dir / "source.%(ext)s")}) as ydl:
-        ydl.download([url])
+    _fetch(url, {"format": _video_format(height), "merge_output_format": "mp4",
+                 "outtmpl": str(job_dir / "source.%(ext)s")})
     return _biggest(job_dir, "source")
 
 
@@ -281,8 +334,7 @@ def download_section(url: str, out_dir: Path, stem: str, start: float, end: floa
             "download_ranges": download_range_func(None, [(max(0.0, start), end)])}
     if exact:
         opts["force_keyframes_at_cuts"] = True
-    with _youtube_guard(url), _ydl(opts) as ydl:
-        ydl.download([url])
+    _fetch(url, opts)
     return _biggest(out_dir, stem)
 
 
