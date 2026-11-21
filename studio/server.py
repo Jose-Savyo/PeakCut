@@ -1048,6 +1048,14 @@ def delete_job(jid: str):
     return {"ok": True}
 
 
+@app.post("/api/jobs/{jid}/cancel")
+def cancel_job(jid: str):
+    _job_or_404(jid)
+    if not jobs.cancel(jid):
+        raise HTTPException(409, "This video is not waiting or being worked on.")
+    return {"ok": True}
+
+
 def _pairs(v, limit=300) -> list:
     """[[video id, clip id], ...] from the page, checked."""
     out = []

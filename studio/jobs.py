@@ -362,6 +362,38 @@ def _live_worker():
             traceback.print_exc()
 
 
+class Cancelled(Exception):
+    """The person pressed Cancel: the video stops at the next safe point."""
+
+
+def _check(job):
+    if job.get("cancel"):
+        raise Cancelled()
+
+
+def cancel(jid) -> bool:
+    """Stop a video that is waiting or being worked on. One that is waiting stops at once; one being worked on
+    finishes the step it is in (a piece of transcript, a clip being encoded) and stops there. Clips already made
+    are kept. False if the video is not waiting or being worked on."""
+    job = _jobs.get(jid)
+    if not job or job.get("kind") == "live" or job.get("status") not in ("queued", "running"):
+        return False
+    job["cancel"] = True
+    if job["status"] == "queued":
+        _stopped(job)
+    else:
+        _set(job, stage="Stopping after the current step")
+    return True
+
+
+def _stopped(job):
+    for c in job.get("clips", []):
+        if c.get("status") in ("queued", "rendering"):
+            c.update(status="error", error="Cancelled before this clip was made.")
+    _set(job, status="done", stage="Cancelled", cancelled=True, error=None)
+    creators.log(job.get("creator"), f"Video cancelled: {job.get('title') or job['source'].get('name') or ''}")
+
+
 def delete(jid):
     with _lock:
         job = _jobs.pop(jid, None)
@@ -768,6 +800,7 @@ def _run_job(job):
                 _set(job, progress=0.03 + 0.1 * p)
 
         audio_file = media.download_audio(src["url"], d, got)
+        _check(job)
     else:
         pieces, audio_file = False, Path(src["path"])
         info = media.probe(audio_file)
@@ -815,6 +848,7 @@ def _run_job(job):
     began = {}      # clip id -> when work on it started
 
     def make(clip, words_now):
+        _check(job)
         began[clip["id"]] = time.time()
         if src["type"] == "url" and (pieces or not whole_video()):
             _fetch_piece(job, clip, audio)
@@ -894,6 +928,7 @@ def _run_job(job):
     # so it is done here rather than for each clip, and only when asked for.
     statics = quality.static_ranges(job.get("source_path") or "") if config.SKIP_STATIC else []
     for bi, (a, b) in enumerate(blocks):
+        _check(job)
         if bi < done_blocks:
             continue                      # transcribed and checked by the AI before the restart
         shift = a / 16000
@@ -1002,6 +1037,8 @@ def _worker(quick_only=False):
         token = ctx._uid.set(job["user"])  # everything this job does runs as its owner
         try:
             if kind == "job":
+                if job.get("cancel"):
+                    continue              # cancelled while it waited in line (the finally below still runs)
                 _run_job(job)
             else:
                 clip = next(c for c in job["clips"] if c["id"] == cid)
@@ -1010,6 +1047,9 @@ def _worker(quick_only=False):
                     words = json.loads((Path(job["dir"]) / "words.json").read_text(encoding="utf-8"))
                 render_one(job, clip, words)
         except Exception as e:  # noqa: BLE001
+            if kind == "job" and (isinstance(e, Cancelled) or job.get("cancel")):
+                _stopped(job)             # cancelled: whatever stopped it, it ends as cancelled, not as failed
+                continue
             if kind == "job" and isinstance(e, media.YouTubeBlocked) and _wait_for_youtube(job):
                 continue                  # it waits in line and starts again by itself (the finally below still runs)
             (Path(job["dir"]) / "error.log").write_text(traceback.format_exc(), encoding="utf-8")

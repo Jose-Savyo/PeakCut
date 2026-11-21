@@ -78,10 +78,30 @@ job["yt_waits"] = jobs.YT_MAX_WAITS
 check("...and after about three hours of refusals it is given up", jobs._wait_for_youtube(job), False)
 check("the wait follows the pause YouTube asked for", 590 <= media.yt_pause_left() <= 600)
 
+# ---- Cancel: a video waiting in line stops at once, one being worked on stops at the next safe point
+wait_dir = Path(tempfile.mkdtemp(prefix="pc-yt-cancel-"))
+w = {"id": "j2", "user": "u1", "kind": "video", "dir": str(wait_dir), "creator": None, "status": "queued", "source": {"name": "x"},
+     "clips": [{"id": "clip01", "status": "done"}, {"id": "clip02", "status": "queued"}]}
+jobs._jobs["j2"] = w
+check("a waiting video can be cancelled", jobs.cancel("j2"), True)
+check("...it stops at once and keeps the clips already made", (w["status"], w["stage"], [c["status"] for c in w["clips"]]),
+      ("done", "Cancelled", ["done", "error"]))
+check("...and a finished video cannot be cancelled again", jobs.cancel("j2"), False)
+r = {"id": "j3", "user": "u1", "kind": "video", "dir": str(wait_dir), "creator": None, "status": "running", "source": {"name": "x"}, "clips": []}
+jobs._jobs["j3"] = r
+check("a video being worked on is asked to stop", (jobs.cancel("j3"), r["status"], r["stage"]), (True, "running", "Stopping after the current step"))
+try:
+    jobs._check(r)
+    stopped = False
+except jobs.Cancelled:
+    stopped = True
+check("...and stops at the next safe point", stopped, True)
+check("a live recording is not cancelled this way (it has its own Stop)", jobs.cancel("nope"), False)
+
 import shutil  # noqa: E402
 
 db.engine.dispose()
-for d in (os.environ["PEAKCUT_DATA"], work, job_dir):
+for d in (os.environ["PEAKCUT_DATA"], work, job_dir, wait_dir):
     shutil.rmtree(d, ignore_errors=True)
 print("ALL PASSED" if not fails else f"{len(fails)} FAILED")
 sys.exit(1 if fails else 0)
