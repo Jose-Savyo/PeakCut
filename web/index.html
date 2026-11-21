@@ -397,6 +397,8 @@ img.av{object-fit:cover}
 .lay-prev.fit .ph{background:#000}.lay-prev.fit .ph::before{display:none}
 .lay-prev.split .ph i{top:0;height:23px;transform:none}
 .lay-prev.split .ph::before{inset:25px 0 0 0;filter:none;opacity:1;background:linear-gradient(135deg,#FFB27A,#FF8B33)}
+.lay-prev.camtop .ph::before{inset:0 0 32px 0;filter:none;opacity:1;background:linear-gradient(135deg,#FFD9B8,#FFB27A)}
+.lay-prev.camtop .ph i{top:17px;height:14px;transform:none}
 .seg{display:flex;gap:4px;background:#fff;border-radius:10px;padding:4px}
 .composer.compact .seg{background:var(--muted)}
 .seg button{flex:1;display:flex;flex-direction:column;align-items:center;gap:1px;padding:7px 6px;border:0;border-radius:7px;background:transparent;color:var(--dim);font-size:13px;font-weight:600;cursor:pointer;transition:background-color .15s ease,color .15s ease}
@@ -1403,7 +1405,7 @@ function drawAdd(variant) {
     </div></div></form>`;
   drawAtt();
 }
-const LAYOUT_SHORT = {blur:"Blurred fill", zoom:"Zoomed in", crop:"Fill screen", left:"Keep left", right:"Keep right", fit:"Black bars", split:"Split screen", gameplay:"Gameplay + facecam"};
+const LAYOUT_SHORT = {blur:"Blurred fill", zoom:"Zoomed in", crop:"Fill screen", left:"Keep left", right:"Keep right", fit:"Black bars", split:"Split screen", gameplay:"Gameplay + facecam", camtop:"Webcam on top"};
 /* The language spoken in the video picks which speech model writes the transcript. Languages other than English
    need their model downloaded once (Settings → Speech models). */
 const LANG_NATIVE = {ar:"العربية", pt:"Português"};

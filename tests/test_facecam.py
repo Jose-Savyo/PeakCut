@@ -119,6 +119,16 @@ try:
 finally:
     shutil.rmtree(work, ignore_errors=True)      # the pictures are big; they must not be left behind
 
+# ---- the "webcam on top" layout: the webcam big above, the whole game in the middle
+lay, fg, hy, cy = render.geometry(1280, 720, "camtop")
+check("webcam on top keeps the whole game (16:9 band in the middle)", (lay, fg), ("camtop", 608))
+check("...heading and captions sit below the game", hy > 656 + 608 and hy < cy <= 1640, True)
+f = render._filter("camtop", 608, [0, 0, 291, 169])
+check("...the webcam is cropped (its border trimmed) and made big on top", "crop=" in f and "scale=1080:656" in f, True)
+check("...the small webcam inside the game is blurred", "boxblur=12:2" in f, True)
+check("...the game sits right under the webcam", "overlay=0:656" in f, True)
+check("the layout asks for the webcam to be found", "camtop" in render.WEBCAM_LAYOUTS, True)
+
 # ---- a long video comes piece by piece: the webcam is looked for in the first piece, once
 from studio import jobs  # noqa: E402
 looked = []

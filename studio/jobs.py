@@ -462,7 +462,7 @@ def render_one(job, clip, words):
         src = Path(clip["src"]) if clip.get("src") else Path(job["source_path"])
         if not clip.get("src"):
             clip["end"] = min(clip["end"], job["duration"])
-        if clip.get("layout") == "gameplay" and not clip.get("facecam") and clip.get("src"):
+        if clip.get("layout") in render.WEBCAM_LAYOUTS and not clip.get("facecam") and clip.get("src"):
             # A long video is never downloaded whole, only the piece of each clip: the webcam is looked for in
             # the piece instead, once for the whole video (it does not move during a stream).
             face = _piece_facecam(job, src)
@@ -891,7 +891,7 @@ def _run_job(job):
                 hashtags.apply(c, words, job["title"], job["uploader"], game)
             # Only the gameplay layout uses a webcam, so it is only looked for then, and only once: a
             # stream with no webcam is not looked for again on every clip of it.
-            if o["layout"] == "gameplay" and face is False:
+            if o["layout"] in render.WEBCAM_LAYOUTS and face is False:
                 face = _facecam(job)
             if face:
                 c["facecam"] = face

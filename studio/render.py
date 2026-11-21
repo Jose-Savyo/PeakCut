@@ -81,8 +81,10 @@ def install_fonts():
 LAYOUTS = {"blur": "Full frame + blurred fill", "zoom": "Zoomed in + blurred fill", "crop": "Fill the screen (centre crop)",
            "left": "Fill the screen, keep the left side", "right": "Fill the screen, keep the right side",
            "fit": "Full frame on black", "split": "Split screen: left half on top, right half below (two people)",
-           "gameplay": "Gameplay fills the screen, facecam in the corner"}
+           "gameplay": "Gameplay fills the screen, facecam in the corner",
+           "camtop": "Webcam big on top, the whole game in the middle"}
 _FILLS = ("crop", "left", "right", "gameplay")      # layouts where the picture covers the whole frame
+WEBCAM_LAYOUTS = ("gameplay", "camtop")             # layouts that need to know where the webcam is
 
 
 def _ts(t):
@@ -118,7 +120,7 @@ def geometry(src_w, src_h, layout):
         layout = "crop"  # already vertical or square: nothing to gain from a blurred fill
     if layout not in LAYOUTS:
         layout = "blur"
-    if layout in ("blur", "fit"):
+    if layout in ("blur", "fit", "camtop"):
         fg_h = min(H, int(round(W * src_h / src_w / 2)) * 2)
     elif layout == "zoom":
         fg_h = 1000
@@ -129,6 +131,10 @@ def geometry(src_w, src_h, layout):
         return layout, fg_h, 300, 1380
     if layout == "split":
         return layout, fg_h, 230, H // 2        # captions sit on the line between the two people
+    if layout == "camtop":
+        # webcam above the game, the game in the middle; heading and captions share the band below the game
+        below = top + fg_h
+        return layout, fg_h, below + 130, min(1640, below + 400)
     return layout, fg_h, max(230, top - 190), min(1640, top + fg_h + 180)
 
 
@@ -250,6 +256,21 @@ def _filter(layout, fg_h, facecam=None):
                     f"[base]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},setsar=1[b];"
                     f"[fc]crop={fw}:{fh}:{fx}:{fy},scale={PIP_W}:{pip_h},setsar=1[p];"
                     f"[b][p]overlay={W - PIP_W - PIP_MARGIN}:{PIP_MARGIN}[v0];")
+    if layout == "camtop" and facecam:
+        fx, fy, fw, fh = (int(v) for v in facecam)
+        if fw > 8 and fh > 8:
+            # The webcam's own frame (a coloured border on most streams) is trimmed off before it is made big.
+            ix, iy = max(1, fw * 7 // 100), max(1, fh * 7 // 100)
+            cx, cy, cw, ch = fx + ix, fy + iy, max(2, fw - 2 * ix), max(2, fh - 2 * iy)
+            band = (H - fg_h) // 2
+            return (f"[0:v]fps={config.OUT_FPS},split=4[w][g][s][b];"
+                    f"[w]crop={cw}:{ch}:{cx}:{cy},scale={W}:{band}:force_original_aspect_ratio=increase,"
+                    f"crop={W}:{band},setsar=1[cam];"
+                    # the small webcam inside the game is blurred: the face is already big above it
+                    f"[s]crop={fw}:{fh}:{fx}:{fy},boxblur=12:2[sb];[g][sb]overlay={fx}:{fy},scale={W}:{fg_h}[game];"
+                    f"[b]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,boxblur=6:2,"
+                    f"scale={W}:{H},eq=brightness=-0.14:saturation=1.15[bg];"
+                    f"[bg][cam]overlay=0:0[x];[x][game]overlay=0:{band},setsar=1[v0];")
     fill = f"[0:v]fps={config.OUT_FPS},scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H}"
     if layout == "crop" or (layout == "gameplay" and not facecam):
         return fill + ",setsar=1[v0];"
@@ -290,6 +311,9 @@ def render_clip(src: Path, out_dir: Path, name: str, clip: dict, words: list, sr
     face = clip.get("facecam")
     if layout == "gameplay" and not (face and len(face) == 4):
         layout = "crop"     # no webcam found: the game fills the screen, which is still the right shape
+    if layout == "camtop" and not (face and len(face) == 4):
+        # no webcam found: the whole game over a blurred fill, so nothing of the game is cut off
+        layout, fg_h, hook_y, cap_y = geometry(src_w, src_h, "blur")
     hook_y = _hook_y(layout, hook_y, face)
     ass = build_ass(words if clip.get("captions", True) else [], start, end, clip.get("hook", ""), clip.get("style", "bounce"),
                     clip.get("highlight_words", []), hook_y, cap_y)
