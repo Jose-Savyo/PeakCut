@@ -140,8 +140,16 @@ check("...and kept for the next pieces, without looking again", (jobs._piece_fac
       ([10, 20, 300, 160], ["piece1.mp4"]))
 jobs._facecam = lambda job, path=None: looked.append(path) or None
 job, looked[:] = {"source_path": None}, []
-jobs._piece_facecam(job, "a.mp4"), jobs._piece_facecam(job, "b.mp4")
-check("a stream with no webcam is looked at only once", looked, ["a.mp4"])
+for name in ("a.mp4", "b.mp4", "c.mp4", "d.mp4", "e.mp4"):
+    jobs._piece_facecam(job, name)
+check("a stream with no webcam is looked at in 3 pieces, then left alone", looked, ["a.mp4", "b.mp4", "c.mp4"])
+# the first piece hides the webcam (a pause menu), the second shows it
+jobs._facecam = lambda job, path=None: looked.append(path) or ([5, 5, 290, 165] if path == "menu-free.mp4" else None)
+job, looked[:] = {"source_path": None}, []
+first = jobs._piece_facecam(job, "menu.mp4")
+second = jobs._piece_facecam(job, "menu-free.mp4")
+check("a webcam hidden in one piece is found in the next", (first, second, jobs._piece_facecam(job, "x.mp4"), looked),
+      (None, [5, 5, 290, 165], [5, 5, 290, 165], ["menu.mp4", "menu-free.mp4"]))
 jobs._facecam = real_detect
 
 print("ALL PASSED" if not fails else f"{len(fails)} FAILED")

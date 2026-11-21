@@ -582,8 +582,14 @@ def _fetch_piece(job, clip, full_audio):
     o = job["options"]
     try:
         want = max(0.0, clip["start"] - PAD)
-        piece = media.download_section(job["source"]["url"], d / "clips", f"{clip['id']}.src", want,
-                                       min(job["duration"], clip["end"] + PAD), int(o["quality"]))
+        until = min(job["duration"], clip["end"] + PAD)
+        try:
+            piece = media.download_section(job["source"]["url"], d / "clips", f"{clip['id']}.src", want, until, int(o["quality"]))
+        except media.YouTubeBlocked:
+            raise
+        except Exception:  # noqa: BLE001 - a piece sometimes fails once (the site drops the connection): one more try
+            time.sleep(3)
+            piece = media.download_section(job["source"]["url"], d / "clips", f"{clip['id']}.src", want, until, int(o["quality"]))
         wav = d / "clips" / f"{clip['id']}.wav"
         media.extract_audio(piece, wav)
         part = media.load_audio(wav)
@@ -631,16 +637,21 @@ def _facecam(job, path=None) -> list | None:
 
 
 _face_lock = threading.Lock()
+FACE_TRIES = 3      # pieces looked at before deciding a stream has no webcam
 
 
 def _piece_facecam(job, piece) -> list | None:
-    """The webcam of a video that is fetched piece by piece, looked for in the first piece that is made, and
-    then kept for the rest. Pieces are made on several threads at once, so only one of them looks."""
+    """The webcam of a video that is fetched piece by piece, looked for in the pieces as they are made, and kept
+    for the rest once found. One piece can hide it (a pause menu drawn behind the webcam, a full-screen
+    cutscene), so up to FACE_TRIES pieces are looked at before giving up. Pieces are made on several threads at
+    once, so only one of them looks at a time."""
     with _face_lock:
         if job.get("facecam"):
             return job["facecam"]
-        if job.get("facecam_looked"):
+        tries = int(job.get("facecam_tries") or 0)
+        if tries >= FACE_TRIES:
             return None
+        job["facecam_tries"] = tries + 1
         job["facecam_looked"] = True
         face = _facecam(job, str(piece))
         if face:
