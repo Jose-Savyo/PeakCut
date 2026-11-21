@@ -1,3 +1,22 @@
+# SheriffClips
+
+SheriffClips is a fork of **[PeakCut](https://github.com/haziqahmedqasmi/PeakCut)** by the PeakCut contributors,
+released under the MIT licence (see [LICENSE](LICENSE), kept as it was). Everything PeakCut does comes from there;
+this fork adds:
+
+- **Portuguese (Brazil)**: speech model (Parakeet TDT 0.6b v3), captions, hooks, titles and hashtags in Portuguese;
+  lines said in another language (a game character talking English) are translated into Portuguese.
+- **Webcam on top** layout: the streamer's webcam big on top and the whole game in the middle.
+- The webcam is found in long videos too (fetched piece by piece), with a fix for boxes cut short by a line in the picture.
+- YouTube is opened once per video; when YouTube refuses downloads, the video waits and starts again by itself.
+- A **Cancel** button for videos waiting or being worked on.
+- A dark and purple look, without the "Star on GitHub" and "Follow me" buttons.
+
+Settings and commands are the same as PeakCut's (the `PEAKCUT_*` names are kept on purpose). The original README
+follows.
+
+---
+
 # PeakCut
 
 Turn long videos and live streams into captioned vertical clips, ready to post. Free and open source: run it on

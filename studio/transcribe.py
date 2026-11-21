@@ -159,7 +159,7 @@ def _load_sherpa():
             return mod
     except OSError:
         pass
-    raise RuntimeError("PeakCut is in a folder too deep for Windows to load the speech model from. Move the PeakCut "
+    raise RuntimeError("SheriffClips is in a folder too deep for Windows to load the speech model from. Move the SheriffClips "
                        "folder somewhere short, like C:\\peakcut, and start it again.") from first
 
 

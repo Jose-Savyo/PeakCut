@@ -136,7 +136,7 @@ def _use_link(token: str, purpose: str) -> str:
 def send_verify(u) -> bool:
     from . import mailer
     link = f"{config.PUBLIC_URL}/auth/verify?t={_make_link(u.id, 'verify', 3 * 86400)}"
-    return mailer.send(u.email, "Confirm your email for PeakCut", "Confirm your email",
+    return mailer.send(u.email, "Confirm your email for SheriffClips", "Confirm your email",
                        "Thanks for joining PeakCut. Confirm this is your email address to start clipping.",
                        "Confirm my email", link, "The link works for 3 days. If you didn't sign up, you can ignore this email.")
 
@@ -155,7 +155,7 @@ def forgot(email: str):
     if not u or u.disabled:
         return
     link = f"{config.PUBLIC_URL}/reset?t={_make_link(u.id, 'reset', 3600)}"
-    mailer.send(u.email, "Reset your PeakCut password", "Reset your password",
+    mailer.send(u.email, "Reset your SheriffClips password", "Reset your password",
                 "Someone asked to reset the password for this PeakCut account. If that was you, choose a new one below.",
                 "Choose a new password", link, "The link works for one hour. If you didn't ask for this, ignore this email and your password stays the same.")
 
